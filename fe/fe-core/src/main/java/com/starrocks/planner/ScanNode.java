@@ -179,4 +179,32 @@ public abstract class ScanNode extends PlanNode {
     public boolean isRunningAsConnectorOperator() {
         return true;
     }
+<<<<<<< HEAD
+=======
+
+    public void setScanSampleStrategy(RemoteFilesSampleStrategy strategy) {
+    }
+
+    public boolean isConnectorScanNode() {
+        return this instanceof HdfsScanNode || this instanceof IcebergScanNode ||
+                this instanceof HudiScanNode || this instanceof DeltaLakeScanNode ||
+                this instanceof FileTableScanNode || this instanceof PaimonScanNode ||
+                this instanceof OdpsScanNode || this instanceof IcebergMetadataScanNode;
+    }
+
+    protected String explainColumnDict(String prefix) {
+        StringBuilder output = new StringBuilder();
+        if (!appliedDictStringColumns.isEmpty()) {
+            int maxSize = Math.min(appliedDictStringColumns.size(), 5);
+            List<String> printList = appliedDictStringColumns.subList(0, maxSize);
+            String format_template = "dict_col=%s";
+            if (appliedDictStringColumns.size() > 5) {
+                format_template = format_template + "...";
+            }
+            output.append(prefix).append(String.format(format_template, Joiner.on(",").join(printList)));
+            output.append("\n");
+        }
+        return output.toString();
+    }
+>>>>>>> 1c19057e6 ([Enhancement] Estimate numWorkers of connector scan nodes for query queue (#56053))
 }
