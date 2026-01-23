@@ -334,7 +334,7 @@ int64_t ColumnHelper::find_first_not_equal(const Column* column, int64_t target,
 // Nullable(int8), but required return type is nullable(string), so col need align return type to nullable(string).
 ColumnPtr ColumnHelper::align_return_type(ColumnPtr&& old_col, const TypeDescriptor& type_desc, size_t num_rows,
                                           const bool is_nullable) {
-    MutableColumnPtr new_column = (std::move(*old_col)).mutate();
+    ColumnPtr new_column;
     if (old_col->only_null()) {
         new_column = ColumnHelper::create_column(type_desc, true);
         new_column->append_nulls(num_rows);
@@ -345,10 +345,69 @@ ColumnPtr ColumnHelper::align_return_type(ColumnPtr&& old_col, const TypeDescrip
         auto* const_column = down_cast<const ConstColumn*>(old_col.get());
         new_column->append(*const_column->data_column(), 0, 1);
         new_column->assign(num_rows, 0);
+    } else if (old_col->is_array()) {
+        const ArrayColumn* array_column;
+        const NullableColumn* nullable = nullptr;
+
+        if (old_col->is_nullable()) {
+            nullable = as_raw_column<NullableColumn>(old_col.get());
+            array_column = as_raw_column<ArrayColumn>(nullable->data_column().get());
+        } else {
+            array_column = as_raw_column<ArrayColumn>(old_col.get());
+        }
+
+        auto elements = ColumnHelper::align_return_type(
+            array_column->elements_column()->as_mutable_ptr(),
+            type_desc.children[0], num_rows, array_column->is_nullable());
+
+        new_column = ArrayColumn::create(std::move(elements), array_column->offsets_column()->as_mutable_ptr());
+
+        if (old_col->is_nullable() && nullable != nullptr && !new_column->is_nullable()) {
+            new_column = NullableColumn::create(std::move(new_column), nullable->null_column()->clone());
+        }
+    } else if (old_col->is_struct()) {
+        const StructColumn* struct_column;
+        const NullableColumn* nullable = nullptr;
+
+        if (old_col->is_nullable()) {
+            nullable = as_raw_column<NullableColumn>(old_col.get());
+            struct_column = as_raw_column<StructColumn>(nullable->data_column().get());
+        } else {
+            struct_column = as_raw_column<StructColumn>(old_col.get());
+        }
+
+        // MOST IMPORTANT PART: keep only required struct fields, not all of them
+        const auto names = type_desc.field_names;
+        Columns fields;
+        for (int i = 0; i < names.size(); ++i) {
+            const auto& name = names[i];
+            ColumnPtr column = struct_column->field_column(name);
+            auto aligned = ColumnHelper::align_return_type(
+                column->get_ptr(),
+                type_desc.children[i], num_rows, column->is_nullable());
+
+            if (column->is_nullable() && !aligned->is_nullable()) {
+                const auto nullable_column = as_raw_column<NullableColumn>(column.get());
+                aligned = NullableColumn::create(std::move(aligned), nullable_column->null_column()->clone());
+            }
+
+            fields.emplace_back(std::move(aligned.get()));
+        }
+
+        new_column = StructColumn::create(std::move(fields), std::move(names));
+
+        if (old_col->is_nullable() && nullable != nullptr && !new_column->is_nullable()) {
+            new_column = NullableColumn::create(std::move(new_column),nullable->null_column()->clone());
+        }
+    } else {
+        // return back the original column
+        new_column = std::move(*old_col).mutate();
     }
+
     if (is_nullable && !new_column->is_nullable()) {
         new_column = NullableColumn::create(std::move(new_column), NullColumn::create(new_column->size(), 0));
     }
+
     return new_column;
 }
 

@@ -59,24 +59,8 @@ Status ProjectOperator::push_chunk(RuntimeState* state, const ChunkPtr& chunk) {
         for (size_t i = 0; i < _column_ids.size(); ++i) {
             ASSIGN_OR_RETURN(result_columns[i], _expr_ctxs[i]->evaluate(chunk.get()));
 
-            if (result_columns[i]->only_null()) {
-                result_columns[i] = ColumnHelper::create_column(_expr_ctxs[i]->root()->type(), true);
-                result_columns[i]->append_nulls(chunk->num_rows());
-            } else if (result_columns[i]->is_constant()) {
-                // Note: we must create a new column every time here,
-                // because result_columns[i] is shared_ptr
-                MutableColumnPtr new_column = ColumnHelper::create_column(_expr_ctxs[i]->root()->type(), false);
-                auto* const_column = down_cast<ConstColumn*>(result_columns[i].get());
-                new_column->append(*const_column->data_column(), 0, 1);
-                new_column->assign(chunk->num_rows(), 0);
-                result_columns[i] = std::move(new_column);
-            }
-
-            // follow SlotDescriptor is_null flag
-            if (_type_is_nullable[i] && !result_columns[i]->is_nullable()) {
-                result_columns[i] =
-                        NullableColumn::create(result_columns[i], NullColumn::create(result_columns[i]->size(), 0));
-            }
+            result_columns[i] = ColumnHelper::align_return_type(std::move(result_columns[i]), _expr_ctxs[i]->root()->type(),
+                                                                chunk.get()->num_rows(), _type_is_nullable[i]);
         }
         RETURN_IF_HAS_ERROR(_expr_ctxs);
     }
