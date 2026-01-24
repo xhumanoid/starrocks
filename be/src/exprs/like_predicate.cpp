@@ -386,7 +386,7 @@ StatusOr<ColumnPtr> LikePredicate::constant_substring_fn(FunctionContext* contex
     }
 
     if (columns[0]->has_null()) {
-        return NullableColumn::create(std::move(res), std::move(res_null));
+        return NullableColumn::create(std::move(res), std::move(*res_null).mutate());
     }
     return res;
 }
