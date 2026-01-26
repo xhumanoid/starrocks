@@ -399,6 +399,40 @@ ColumnPtr ColumnHelper::align_return_type(ColumnPtr&& old_col, const TypeDescrip
         if (old_col->is_nullable() && nullable != nullptr && !new_column->is_nullable()) {
             new_column = NullableColumn::create(std::move(new_column),nullable->null_column()->clone());
         }
+    } else if (old_col->is_map()) {
+        const MapColumn* map_column;
+        const NullableColumn* nullable = nullptr;
+
+        if (old_col->is_nullable()) {
+            nullable = as_raw_column<NullableColumn>(old_col.get());
+            map_column = as_raw_column<MapColumn>(nullable->data_column().get());
+        } else {
+            map_column = as_raw_column<MapColumn>(old_col.get());
+        }
+
+        ColumnPtr keys;
+        ColumnPtr values;
+        // similar with
+        if (type_desc.children[0].is_unknown_type()) {
+            // special case for handling unknown type in map keys
+            // https://github.com/StarRocks/starrocks/issues/61436
+            keys = ColumnHelper::create_column(TypeDescriptor{TYPE_NULL}, true, false,
+                map_column->offsets_column()->get_data().back());
+        } else {
+            keys = ColumnHelper::align_return_type(
+                map_column->keys_column()->as_mutable_ptr(),
+                type_desc.children[0], num_rows, map_column->keys_column()->is_nullable());
+        }
+
+        values = ColumnHelper::align_return_type(
+            map_column->values_column()->as_mutable_ptr(),
+            type_desc.children[1], num_rows, map_column->values_column()->is_nullable());
+
+        new_column = MapColumn::create(std::move(keys), std::move(values), map_column->offsets_column()->clone());
+
+        if (old_col->is_nullable() && nullable != nullptr && !new_column->is_nullable()) {
+            new_column = NullableColumn::create(std::move(new_column), nullable->null_column()->clone());
+        }
     } else {
         // return back the original column
         new_column = std::move(*old_col).mutate();
