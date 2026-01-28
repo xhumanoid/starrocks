@@ -100,7 +100,7 @@ public:
     do {                                     \
         for (auto& col : COLUMNS) {          \
             if (col->only_null()) {          \
-                return col;                  \
+                return std::move(*col).mutate(); \
             }                                \
         }                                    \
     } while (false)
