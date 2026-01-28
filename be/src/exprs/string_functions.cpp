@@ -516,7 +516,7 @@ ColumnPtr string_func_const(StringConstFuncType func, const Columns& columns, Ar
         if (src_nullable->has_null()) {
             auto* src_binary = down_cast<const BinaryColumn*>(src_nullable->data_column().get());
             ColumnPtr binary = func(columns, src_binary, std::forward<Args>(args)...);
-            NullColumn::MutablePtr src_null = NullColumn::create(*(src_nullable->null_column()));
+            NullColumnPtr src_null = src_nullable->null_column().get();
 
             // - if binary is null ConstColumn, just return it.
             // - if binary is non-null ConstColumn, unfold it and wrap with src_null.
@@ -528,23 +528,23 @@ ColumnPtr string_func_const(StringConstFuncType func, const Columns& columns, Ar
             if (binary->is_constant()) {
                 auto* dst_const = down_cast<ConstColumn*>(binary.get());
                 dst_const->data_column()->assign(dst_const->size(), 0);
-                return NullableColumn::create(dst_const->data_column(), std::move(src_null));
+                return NullableColumn::create(dst_const->data_column(), src_null->clone());
             }
             if (binary->is_nullable()) {
                 auto* binary_nullable = down_cast<NullableColumn*>(binary.get());
                 if (binary_nullable->has_null()) {
                     // case 2: some rows are nulls and some rows are non-nulls, merge the column
                     // inside original result and the null column inside the columns[0].
-                    NullColumnPtr binary_null = binary_nullable->null_column();
-                    auto union_null = FunctionHelper::union_null_column(std::move(src_null), binary_null);
+                    NullColumnPtr binary_null = binary_nullable->null_column().get();
+                    auto union_null = FunctionHelper::union_null_column(src_null, binary_null);
                     return NullableColumn::create(binary_nullable->data_column(), std::move(union_null));
                 } else {
                     // case 3: any of the result rows is not null, so return the original result.
                     // no merge is needed.
-                    return NullableColumn::create(binary_nullable->data_column(), std::move(src_null));
+                    return NullableColumn::create(binary_nullable->data_column(), src_null->clone());
                 }
             } else {
-                return NullableColumn::create(std::move(binary), std::move(src_null));
+                return NullableColumn::create(std::move(binary), src_null->clone());
             }
         } else {
             auto* src = down_cast<const BinaryColumn*>(src_nullable->data_column().get());
