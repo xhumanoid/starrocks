@@ -268,8 +268,8 @@ public:
         auto* dst_column = down_cast<BinaryColumn*>((*dst).get());
         Bytes& bytes = dst_column->get_bytes();
         double rate = ColumnHelper::get_const_value<TYPE_DOUBLE>(src[1]);
-        auto src_column = *down_cast<const InputColumnType*>(src[0].get());
-        InputCppType* src_data = src_column.get_data().data();
+        const auto& src_column = *down_cast<const InputColumnType*>(src[0].get());
+        const InputCppType* src_data = src_column.get_data().data();
         for (auto i = 0; i < chunk_size; ++i) {
             size_t old_size = bytes.size();
             bytes.resize(old_size + sizeof(double) + sizeof(size_t) + sizeof(InputCppType));
@@ -391,8 +391,8 @@ public:
         Bytes& bytes = dst_column->get_bytes();
         double rate = ColumnHelper::get_const_value<TYPE_DOUBLE>(src[1]);
 
-        auto src_column = *down_cast<const BinaryColumn*>(src[0].get());
-        Slice* src_data = src_column.get_data().data();
+        const auto& src_column = *down_cast<const BinaryColumn*>(src[0].get());
+        const Slice* src_data = src_column.get_data().data();
         for (auto i = 0; i < chunk_size; ++i) {
             size_t old_size = bytes.size();
             // [rate, 1, element ith size, element ith data]
@@ -669,8 +669,8 @@ public:
         bytes.resize(new_size);
         unsigned char* cur = bytes.data() + old_size;
 
-        auto src_column = *down_cast<const InputColumnType*>(src[0].get());
-        InputCppType* src_data = src_column.get_data().data();
+        const auto& src_column = *down_cast<const InputColumnType*>(src[0].get());
+        const InputCppType* src_data = src_column.get_data().data();
 
         size_t cur_size = old_size;
         for (size_t i = 0; i < chunk_size; ++i) {
