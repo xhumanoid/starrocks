@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <mutex>
+
 #include "column/vectorized_fwd.h"
 #include "connector/connector.h"
 #include "connector/footer_prefetch_task.h"
@@ -66,6 +68,12 @@ protected:
     // Shared footer-prefetch open context (one FileSystem per scan), built once and reused
     // across the initial and incremental build_footer_prefetch_items calls.
     std::shared_ptr<pipeline::FooterOpenContext> _footer_open_ctx;
+    // Guards the lazy init of _footer_open_ctx / its FileSystem in build_footer_prefetch_items:
+    // that builder can run on the prepare thread (decompose / initial feed) and concurrently on
+    // brpc handler threads (incremental scan-range delivery), so the shared context must not be
+    // initialized without synchronization. Called at most a handful of times per scan (never per
+    // row), so a plain mutex is free.
+    std::mutex _footer_open_ctx_mutex;
 };
 
 class HiveDataSource final : public DataSource {
