@@ -17,6 +17,7 @@ set(LIBRARY_OUTPUT_PATH "${BUILD_DIR}/src/connector")
 add_library(Connector STATIC
         connector.cpp
         hive_connector.cpp
+        footer_prefetch_task.cpp
         es_connector.cpp
         jdbc_connector.cpp
         lake_connector.cpp

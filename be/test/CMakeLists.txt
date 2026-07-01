@@ -30,6 +30,8 @@ set(EXEC_FILES
         ./common/uri_test.cpp
         ./common/cow_test.cpp
         ./connector/deletion_vector/deletion_vector_test.cpp
+        ./connector/footer_prefetch_task_test.cpp
+        ./exec/pipeline/scan/footer_prefetch_state_test.cpp
         ./connector_sink/hive_chunk_sink_test.cpp
         ./connector_sink/iceberg_chunk_sink_test.cpp
         ./connector_sink/file_chunk_sink_test.cpp

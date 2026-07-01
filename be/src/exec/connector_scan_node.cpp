@@ -18,8 +18,10 @@
 #include <memory>
 
 #include "common/config.h"
+#include "connector/hive_connector.h"
 #include "exec/pipeline/scan/chunk_buffer_limiter.h"
 #include "exec/pipeline/scan/connector_scan_operator.h"
+#include "exec/pipeline/scan/footer_prefetch_state.h"
 #include "exec/stream/scan/stream_scan_operator.h"
 #include "runtime/current_thread.h"
 #include "runtime/exec_env.h"
@@ -152,6 +154,26 @@ pipeline::OpFactories ConnectorScanNode::decompose_to_pipeline(pipeline::Pipelin
     scan_op->set_data_source_mem_bytes(_estimated_data_source_mem_bytes);
     scan_op->set_chunk_source_mem_bytes(_estimated_data_source_mem_bytes +
                                         _estimated_scan_row_bytes * runtime_state()->chunk_size());
+
+    // Install the footer prefetcher (Parquet connector scans only). Built here because the node
+    // holds the scan ranges, dop, runtime state, and the freshly created factory. Disabled scans /
+    // non-Hive providers / no warmable cache yield an empty plan.
+    if (config::enable_connector_footer_prefetch && !stream_data_source) {
+        if (auto* hive_provider = dynamic_cast<connector::HiveDataSourceProvider*>(_data_source_provider.get())) {
+            connector::FooterPrefetchPlan plan =
+                    hive_provider->build_footer_prefetch_items(runtime_state(), _scan_ranges);
+            // Install on cache warmability, not on having initial items: in the pipeline engine the
+            // scan ranges arrive as morsels (and incrementally), so _scan_ranges is empty here. The
+            // state starts empty and is fed by append_footer_prefetch_ranges -- initial ranges after
+            // prepare_all_pipelines, plus incremental batches per RPC.
+            if (plan.metacache_on || plan.datacache_populate_on) {
+                const int lead_distance = static_cast<int>(dop) * config::connector_footer_prefetch_max_inflight *
+                                          config::connector_footer_prefetch_lead_multiplier;
+                scan_op->set_footer_prefetch_state(std::make_shared<pipeline::FooterPrefetchState>(
+                        std::move(plan.items), lead_distance, plan.metacache_on, plan.datacache_populate_on));
+            }
+        }
+    }
 
     auto&& rc_rf_probe_collector = std::make_shared<RcRfProbeCollector>(1, std::move(this->runtime_filter_collector()));
     this->init_runtime_filter_for_operator(scan_op.get(), context, rc_rf_probe_collector);
