@@ -194,6 +194,12 @@ public class DeriveJoinExpressionRangePredicateRule extends TransformationRule {
             max = targetLower.get();
         }
 
+        // prevent generation gt/lt for existing predicates
+        // fix: PREDICATES: 1: v1 >= 1, 1: v1 <= 1, 1: v1 = 1
+        if (min.compareTo(max) == 0 && hasExistingEqualityPredicate(targetColumn.get(), min, existingPredicates)) {
+            return;
+        }
+
         addDerivedPredicate(new BinaryPredicateOperator(BinaryType.GE, targetColumn.get(), min),
                 existingPredicates, outputPredicates);
         addDerivedPredicate(new BinaryPredicateOperator(BinaryType.LE, targetColumn.get(), max),
@@ -238,6 +244,12 @@ public class DeriveJoinExpressionRangePredicateRule extends TransformationRule {
             return Optional.of((ConstantOperator) folded);
         }
         return Optional.empty();
+    }
+
+    private boolean hasExistingEqualityPredicate(ColumnRefOperator column,
+                                                 ConstantOperator constant,
+                                                 Set<String> existingPredicates) {
+        return existingPredicates.contains(new BinaryPredicateOperator(BinaryType.EQ, column, constant).toString());
     }
 
     private void addDerivedPredicate(BinaryPredicateOperator predicate,
