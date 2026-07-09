@@ -73,6 +73,91 @@ public class HivePartitionPruneTest extends ConnectorPlanTestBase {
     }
 
     @Test
+    public void testJoinExpressionRangePredicatePushesThroughIntermediateInnerJoin() throws Exception {
+        String sql =
+                "with events as (" +
+                "   select e.datadate, e.booking_id from event_dates e " +
+                "   where e.datadate between '20260630' and '20260702' " +
+                "), " +
+                " fact_filter as (" +
+                "   select f.booking_id, f.datamonth from fact_by_month f " +
+                "   join (select distinct booking_id from events) e on f.booking_id = e.booking_id " +
+                "), " +
+                " facts as ( " +
+                "   select f.booking_id, f.datamonth from fact_filter f " +
+                "   join events e on f.booking_id = e.booking_id and f.datamonth = date_format(cast(e.datadate as date), '%Y%m') " +
+                ") " +
+                " select * from facts";
+
+        System.out.println(sql);
+        String plan = getFragmentPlan(sql);
+
+        assertContains(plan, "TABLE: fact_by_month");
+        assertContains(plan, "datamonth >= 202606");
+        assertContains(plan, "datamonth <= 202607");
+        assertContains(plan, "partitions=2/3");
+    }
+
+    @Test
+    public void testJoinExpressionRangePredicatePrunesTargetPartition() throws Exception {
+        String sql = "select f.booking_id, f.datamonth, e.datadate from fact_by_month f join event_dates e " +
+                "on f.booking_id = e.booking_id " +
+                "and f.datamonth = date_format(cast(e.datadate as date), '%Y%m') " +
+                "where e.datadate between '20260701' and '20260702'";
+        String plan = getFragmentPlan(sql);
+
+        assertContains(plan, "TABLE: fact_by_month");
+        assertContains(plan, "PARTITION PREDICATES:");
+        assertContains(plan, "datamonth >= 202607");
+        assertContains(plan, "datamonth <= 202607");
+        assertContains(plan, "partitions=1/3");
+    }
+
+    @Test
+    public void testJoinExpressionRangePredicatePrunesTargetPartitionAcrossMonths() throws Exception {
+        String sql = "select f.booking_id, f.datamonth, e.datadate from fact_by_month f join event_dates e " +
+                "on f.booking_id = e.booking_id " +
+                "and f.datamonth = date_format(cast(e.datadate as date), '%Y%m') " +
+                "where e.datadate between '20260630' and '20260702'";
+        String plan = getFragmentPlan(sql);
+
+        assertContains(plan, "TABLE: fact_by_month");
+        assertContains(plan, "PARTITION PREDICATES:");
+        assertContains(plan, "datamonth >= 202606");
+        assertContains(plan, "datamonth <= 202607");
+        assertContains(plan, "partitions=2/3");
+    }
+
+    @Test
+    public void testJoinExpressionRangePredicateSkipUnsupportedCases() throws Exception {
+        String sql = "select f.booking_id, f.datamonth, e.datadate from fact_by_month f join event_dates e " +
+                "on f.booking_id = e.booking_id " +
+                "and cast(f.datamonth as varchar) = date_format(cast(e.datadate as date), '%m%Y') " +
+                "where e.datadate between '20260701' and '20260702'";
+        String plan = getFragmentPlan(sql);
+        assertContains(plan, "TABLE: fact_by_month");
+        assertContains(plan, "partitions=3/3");
+        assertNotContains(plan, "datamonth >= 202607");
+
+        sql = "select f.booking_id, f.datamonth, e.datadate from fact_by_month f join event_dates e " +
+                "on f.booking_id = e.booking_id " +
+                "and cast(f.datamonth as varchar) = date_format(cast(e.datadate as date), '%Y%m')";
+        plan = getFragmentPlan(sql);
+        assertContains(plan, "TABLE: fact_by_month");
+        assertContains(plan, "partitions=3/3");
+        assertNotContains(plan, "datamonth >= 202607");
+
+        sql = "select f.booking_id, f.datamonth, e.datadate from fact_by_month f left outer join event_dates e " +
+                "on f.booking_id = e.booking_id " +
+                "and cast(f.datamonth as varchar) = date_format(cast(e.datadate as date), '%Y%m') " +
+                "and e.datadate between '20260701' and '20260702'";
+        plan = getFragmentPlan(sql);
+        assertContains(plan, "TABLE: fact_by_month");
+        assertContains(plan, "partitions=3/3");
+        assertNotContains(plan, "datamonth >= 202607");
+    }
+
+    @Test
     public void testCompoundPartitionPrune() throws Exception {
         String sql = "select * from t1 where par_col = 0 and par_col = 5";
         String plan = getFragmentPlan(sql);

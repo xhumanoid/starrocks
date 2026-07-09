@@ -48,6 +48,7 @@ import com.starrocks.sql.optimizer.rule.transformation.ApplyExceptionRule;
 import com.starrocks.sql.optimizer.rule.transformation.ArrayDistinctAfterAggRule;
 import com.starrocks.sql.optimizer.rule.transformation.CTEProduceAddProjectionRule;
 import com.starrocks.sql.optimizer.rule.transformation.ConvertToEqualForNullRule;
+import com.starrocks.sql.optimizer.rule.transformation.DeriveJoinExpressionRangePredicateRule;
 import com.starrocks.sql.optimizer.rule.transformation.DeriveRangeJoinPredicateRule;
 import com.starrocks.sql.optimizer.rule.transformation.DistinctAggregationOverWindowRule;
 import com.starrocks.sql.optimizer.rule.transformation.EliminateAggFunctionRule;
@@ -381,6 +382,7 @@ public class QueryOptimizer extends Optimizer {
             }
             // PARTITION_PRUNE is required to run before ReorderJoinRule because ReorderJoinRule's
             // Statistics calculation on Operators depends on row count yielded by the PARTITION_PRUNE.
+            deriveJoinExpressionRangePredicates(tree, rootTaskContext);
             scheduler.rewriteOnce(tree, rootTaskContext, RuleSet.PARTITION_PRUNE_RULES);
             // ReorderJoinRule is a in-memo rule, when it is used outside memo, we must apply
             // MergeProjectWithChildRule to merge LogicalProjectionOperator into its child's
@@ -679,6 +681,8 @@ public class QueryOptimizer extends Optimizer {
         scheduler.rewriteDownTop(tree, rootTaskContext, OnPredicateMoveAroundRule.INSTANCE);
         scheduler.rewriteIterative(tree, rootTaskContext, RuleSet.PUSH_DOWN_PREDICATE_RULES);
         scheduler.rewriteIterative(tree, rootTaskContext, new PartitionColumnMinMaxRewriteRule());
+
+        deriveJoinExpressionRangePredicates(tree, rootTaskContext);
         scheduler.rewriteOnce(tree, rootTaskContext, RuleSet.PARTITION_PRUNE_RULES);
         scheduler.rewriteIterative(tree, rootTaskContext, new RewriteMultiDistinctRule());
         scheduler.rewriteIterative(tree, rootTaskContext, RuleSet.PUSH_DOWN_PREDICATE_RULES);
@@ -762,6 +766,11 @@ public class QueryOptimizer extends Optimizer {
         //  Just clear it before into memo.
         tree.getInputs().get(0).clearStatsAndInitOutputInfo();
         return tree.getInputs().get(0);
+    }
+
+    private void deriveJoinExpressionRangePredicates(OptExpression tree, TaskContext rootTaskContext) {
+        scheduler.rewriteOnce(tree, rootTaskContext, new DeriveJoinExpressionRangePredicateRule());
+        scheduler.rewriteIterative(tree, rootTaskContext, RuleSet.PUSH_DOWN_PREDICATE_RULES);
     }
 
     private void rewriteGroupingSets(OptExpression tree, TaskContext rootTaskContext, SessionVariable sessionVariable) {

@@ -730,6 +730,77 @@ public class MockedHiveMetadata implements ConnectorMetadata {
         mockTablesWithSinglePartitionColumn();
         mockOrders();
         mockWithMultiDuplicatePartitionColumns();
+        mockJoinExpressionRangePartitionTables();
+    }
+
+    public static void mockJoinExpressionRangePartitionTables() {
+        MOCK_TABLE_MAP.putIfAbsent(MOCKED_PARTITIONED_DB_NAME, new CaseInsensitiveMap<>());
+        Map<String, HiveTableInfo> mockTables = MOCK_TABLE_MAP.get(MOCKED_PARTITIONED_DB_NAME);
+
+        List<FieldSchema> factCols = Lists.newArrayList();
+        factCols.add(new FieldSchema("booking_id", "int", null));
+        factCols.add(new FieldSchema("amount", "int", null));
+        StorageDescriptor factSd =
+                new StorageDescriptor(factCols, "", MAPRED_PARQUET_INPUT_FORMAT_CLASS,
+                        "", false, -1, null, Lists.newArrayList(), Lists.newArrayList(),
+                        Maps.newHashMap());
+        Table fact = new Table("fact_by_month", MOCKED_PARTITIONED_DB_NAME, null, 0, 0, 0, factSd,
+                ImmutableList.of(new FieldSchema("datamonth", "int", null)), Maps.newHashMap(),
+                null, null, "EXTERNAL_TABLE");
+
+        List<String> factPartitionNames = ImmutableList.of("datamonth=202606", "datamonth=202607",
+                "datamonth=202608");
+        List<PartitionKey> factPartitionKeys = ImmutableList.of(
+                new PartitionKey(ImmutableList.of(new IntLiteral(202606)), ImmutableList.of(PrimitiveType.INT)),
+                new PartitionKey(ImmutableList.of(new IntLiteral(202607)), ImmutableList.of(PrimitiveType.INT)),
+                new PartitionKey(ImmutableList.of(new IntLiteral(202608)), ImmutableList.of(PrimitiveType.INT)));
+        Map<String, ColumnStatistic> factStats =
+                factCols.stream().map(FieldSchema::getName)
+                        .collect(Collectors.toMap(Function.identity(), col -> ColumnStatistic.unknown()));
+        factStats.put("datamonth", getPartitionColumnStatistic(new Column("datamonth", IntegerType.INT),
+                factPartitionKeys, ImmutableList.of("datamonth"), Maps.newHashMap(), 100, 300));
+        List<RemoteFileInfo> factFiles = Lists.newArrayList();
+        factPartitionNames.forEach(
+                ignored -> factFiles.add(new RemoteFileInfo(RemoteFileInputFormat.ORC, ImmutableList.of(), null)));
+        mockTables.put(fact.getTableName(),
+                new HiveTableInfo(HiveMetastoreApiConverter.toHiveTable(fact, MOCKED_HIVE_CATALOG_NAME),
+                        factPartitionNames, 300, factStats, factFiles));
+
+        List<FieldSchema> eventCols = Lists.newArrayList();
+        eventCols.add(new FieldSchema("booking_id", "int", null));
+        eventCols.add(new FieldSchema("event_name", "string", null));
+        StorageDescriptor eventSd =
+                new StorageDescriptor(eventCols, "", MAPRED_PARQUET_INPUT_FORMAT_CLASS,
+                        "", false, -1, null, Lists.newArrayList(), Lists.newArrayList(),
+                        Maps.newHashMap());
+        Table event = new Table("event_dates", MOCKED_PARTITIONED_DB_NAME, null, 0, 0, 0, eventSd,
+                ImmutableList.of(new FieldSchema("datadate", "string", null)), Maps.newHashMap(),
+                null, null, "EXTERNAL_TABLE");
+
+        List<String> eventPartitionNames = ImmutableList.of("datadate=20260630", "datadate=20260701",
+                "datadate=20260702", "datadate=20260708", "datadate=20260801");
+        List<PartitionKey> eventPartitionKeys = ImmutableList.of(
+                new PartitionKey(ImmutableList.of(new StringLiteral("20260630")),
+                        ImmutableList.of(PrimitiveType.VARCHAR)),
+                new PartitionKey(ImmutableList.of(new StringLiteral("20260701")),
+                        ImmutableList.of(PrimitiveType.VARCHAR)),
+                new PartitionKey(ImmutableList.of(new StringLiteral("20260702")),
+                        ImmutableList.of(PrimitiveType.VARCHAR)),
+                new PartitionKey(ImmutableList.of(new StringLiteral("20260708")),
+                        ImmutableList.of(PrimitiveType.VARCHAR)),
+                new PartitionKey(ImmutableList.of(new StringLiteral("20260801")),
+                        ImmutableList.of(PrimitiveType.VARCHAR)));
+        Map<String, ColumnStatistic> eventStats =
+                eventCols.stream().map(FieldSchema::getName)
+                        .collect(Collectors.toMap(Function.identity(), col -> ColumnStatistic.unknown()));
+        eventStats.put("datadate", getPartitionColumnStatistic(new Column("datadate", VarcharType.VARCHAR),
+                eventPartitionKeys, ImmutableList.of("datadate"), Maps.newHashMap(), 100, 500));
+        List<RemoteFileInfo> eventFiles = Lists.newArrayList();
+        eventPartitionNames.forEach(
+                ignored -> eventFiles.add(new RemoteFileInfo(RemoteFileInputFormat.ORC, ImmutableList.of(), null)));
+        mockTables.put(event.getTableName(),
+                new HiveTableInfo(HiveMetastoreApiConverter.toHiveTable(event, MOCKED_HIVE_CATALOG_NAME),
+                        eventPartitionNames, 500, eventStats, eventFiles));
     }
 
     public static void mockOrders() {
