@@ -1688,8 +1688,10 @@ CONF_mBool(enable_connector_sink_spill, "true");
 // executor using io-task slots the data scan leaves spare (adaptive-governor throttle) or while a
 // downstream build stall parks the scan. Per-operator concurrency is capped by
 // connector_footer_prefetch_max_inflight; how far ahead it runs derives from scan dop.
-// NOTE: default disabled in this backport; enable after validating on the target cluster.
-CONF_mBool(enable_connector_footer_prefetch, "false");
+// Runtime-mutable, so it can be toggled live without a restart. Most effective when
+// enable_scan_datacache is on (BlockCache): in metacache-only mode the warm and real-scan cache
+// keys diverge, so warming is a safe no-op there (wasted work, never wrong results).
+CONF_mBool(enable_connector_footer_prefetch, "true");
 
 // Max concurrent footer-warm tasks per connector scan operator.
 CONF_mInt32(connector_footer_prefetch_max_inflight, "4");
